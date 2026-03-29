@@ -75,3 +75,34 @@ async def test_summarize_too_short_text(client):
 async def test_summarize_missing_text(client):
     response = await client.post("/api/v1/summarize", json={})
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_summarize_invalid_strategy(client):
+    response = await client.post(
+        "/api/v1/summarize",
+        json={"text": SAMPLE_TEXT, "strategy": "nonexistent_strategy"},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_summarize_with_max_length_param(client):
+    response = await client.post(
+        "/api/v1/summarize",
+        json={"text": SAMPLE_TEXT, "strategy": "extractive", "num_sentences": 2},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["summary_length"] < data["original_length"]
+
+
+@pytest.mark.asyncio
+async def test_summarize_text_too_long(client):
+    long_text = "This is a sentence that is repeated many times. " * 5000
+    response = await client.post(
+        "/api/v1/summarize",
+        json={"text": long_text, "strategy": "extractive"},
+    )
+    assert response.status_code == 400
+    assert "exceeds maximum length" in response.json()["detail"]

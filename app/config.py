@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     abstractive_max_length: int = 150
     abstractive_min_length: int = 40
     extractive_sentence_count: int = 5
+    preload_abstractive: bool = False
+    request_timeout: int = 120
+    log_level: str = "INFO"
 
     model_config = {"env_prefix": "SUMMARIZER_"}
 

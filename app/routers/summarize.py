@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
@@ -10,6 +12,8 @@ from app.models.schemas import (
 from app.services.abstractive import AbstractiveSummarizer
 from app.services.extractive import ExtractiveSummarizer
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1", tags=["summarization"])
 
 _extractive = ExtractiveSummarizer()
@@ -18,6 +22,11 @@ _abstractive = AbstractiveSummarizer()
 
 @router.post("/summarize", response_model=SummarizeResponse)
 async def summarize(request: SummarizeRequest) -> SummarizeResponse:
+    logger.info(
+        "Summarization request: strategy=%s, input_length=%d",
+        request.strategy.value,
+        len(request.text),
+    )
     if len(request.text) > settings.max_input_length:
         raise HTTPException(
             status_code=400,
@@ -53,4 +62,13 @@ async def summarize(request: SummarizeRequest) -> SummarizeResponse:
 
 @router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="healthy", version="0.1.0")
+    try:
+        test_sentence = (
+            "The quick brown fox jumps over the lazy dog. This is a test sentence for health check."
+        )
+        _extractive.summarize(test_sentence, num_sentences=1)
+        status = "healthy"
+    except Exception:
+        logger.exception("Health check failed")
+        status = "unhealthy"
+    return HealthResponse(status=status, version="0.1.0")

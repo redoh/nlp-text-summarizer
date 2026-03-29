@@ -1,3 +1,6 @@
+from unittest.mock import MagicMock, patch
+
+from app.services.abstractive import AbstractiveSummarizer
 from app.services.extractive import ExtractiveSummarizer
 
 SAMPLE_TEXT = (
@@ -60,3 +63,56 @@ class TestExtractiveSummarizer:
         assert "is" not in tokens
         assert "cat" in tokens
         assert "mat" in tokens
+
+    def test_empty_text(self):
+        result = self.summarizer.summarize("", num_sentences=3)
+        assert isinstance(result, str)
+
+    def test_single_sentence(self):
+        single = "Natural language processing is a fascinating field of study."
+        result = self.summarizer.summarize(single, num_sentences=3)
+        assert result == single.strip()
+
+    def test_very_repetitive_text(self):
+        repetitive = (
+            "The cat sat on the mat. " * 10
+            + "Dogs are loyal companions. "
+            + "The cat sat on the mat. " * 10
+        )
+        result = self.summarizer.summarize(repetitive.strip(), num_sentences=2)
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert len(result) < len(repetitive)
+
+
+class TestAbstractiveSummarizer:
+    def setup_method(self):
+        self.summarizer = AbstractiveSummarizer()
+
+    def test_summarize_calls_pipeline(self):
+        mock_pipe = MagicMock()
+        mock_pipe.return_value = [{"summary_text": "A summary."}]
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            self.summarizer.summarize("Some long text that needs summarization.")
+            mock_pipe.assert_called_once_with(
+                "Some long text that needs summarization.",
+                max_length=150,
+                min_length=40,
+                do_sample=False,
+            )
+
+    def test_summarize_returns_pipeline_result(self):
+        mock_pipe = MagicMock()
+        mock_pipe.return_value = [{"summary_text": "Pipeline generated summary."}]
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            result = self.summarizer.summarize("Some long text that needs summarization.")
+            assert result == "Pipeline generated summary."
+
+    def test_lazy_loading(self):
+        summarizer = AbstractiveSummarizer()
+        assert summarizer._pipeline is None
+        mock_pipe = MagicMock()
+        mock_pipe.return_value = [{"summary_text": "A summary."}]
+        with patch("transformers.pipeline", return_value=mock_pipe):
+            summarizer.summarize("Some long text that needs summarization.")
+            assert summarizer._pipeline is not None
