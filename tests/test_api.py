@@ -1,0 +1,77 @@
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from app.main import app
+
+SAMPLE_TEXT = (
+    "Natural language processing is a subfield of linguistics, computer science, "
+    "and artificial intelligence concerned with the interactions between computers "
+    "and human language. The goal is to enable computers to understand, interpret, "
+    "and generate human language in a valuable way. NLP combines computational "
+    "linguistics with statistical, machine learning, and deep learning models. "
+    "These approaches enable the analysis of large amounts of natural language data. "
+    "Applications of NLP include machine translation, sentiment analysis, chatbots, "
+    "and text summarization. Text summarization is particularly important for "
+    "condensing large documents into shorter versions while preserving key information. "
+    "There are two main approaches to text summarization: extractive and abstractive. "
+    "Extractive summarization selects important sentences from the original text. "
+    "Abstractive summarization generates new sentences that capture the main ideas. "
+    "Modern NLP systems often use transformer architectures like BERT and GPT. "
+    "These models have achieved state-of-the-art results on many NLP benchmarks."
+)
+
+
+@pytest.fixture
+async def client():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.mark.asyncio
+async def test_health(client):
+    response = await client.get("/api/v1/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "healthy"
+
+
+@pytest.mark.asyncio
+async def test_root(client):
+    response = await client.get("/")
+    assert response.status_code == 200
+    data = response.json()
+    assert "name" in data
+
+
+@pytest.mark.asyncio
+async def test_summarize_extractive(client):
+    response = await client.post(
+        "/api/v1/summarize",
+        json={"text": SAMPLE_TEXT, "strategy": "extractive", "num_sentences": 3},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["strategy"] == "extractive"
+    assert data["summary_length"] < data["original_length"]
+    assert 0 < data["compression_ratio"] < 1
+
+
+@pytest.mark.asyncio
+async def test_summarize_default_strategy(client):
+    response = await client.post("/api/v1/summarize", json={"text": SAMPLE_TEXT})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["strategy"] == "extractive"
+
+
+@pytest.mark.asyncio
+async def test_summarize_too_short_text(client):
+    response = await client.post("/api/v1/summarize", json={"text": "Too short"})
+    assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.asyncio
+async def test_summarize_missing_text(client):
+    response = await client.post("/api/v1/summarize", json={})
+    assert response.status_code == 422
