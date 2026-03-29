@@ -116,3 +116,42 @@ class TestAbstractiveSummarizer:
         with patch("transformers.pipeline", return_value=mock_pipe):
             summarizer.summarize("Some long text that needs summarization.")
             assert summarizer._pipeline is not None
+
+    def test_model_failure(self):
+        mock_pipe = MagicMock()
+        mock_pipe.side_effect = RuntimeError("Model inference failed")
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            try:
+                self.summarizer.summarize("Some long text that needs summarization.")
+                assert False, "Should have raised RuntimeError"
+            except RuntimeError as e:
+                assert "Model inference failed" in str(e)
+
+    def test_timeout_simulation(self):
+        mock_pipe = MagicMock()
+        mock_pipe.side_effect = TimeoutError("Pipeline timed out")
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            try:
+                self.summarizer.summarize("Some long text that needs summarization.")
+                assert False, "Should have raised TimeoutError"
+            except TimeoutError as e:
+                assert "timed out" in str(e)
+
+    def test_invalid_input_empty_string(self):
+        mock_pipe = MagicMock()
+        mock_pipe.return_value = [{"summary_text": ""}]
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            result = self.summarizer.summarize("")
+            assert result == ""
+
+    def test_custom_max_length(self):
+        mock_pipe = MagicMock()
+        mock_pipe.return_value = [{"summary_text": "Short."}]
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            self.summarizer.summarize("Some long text that needs summarization.", max_length=50)
+            mock_pipe.assert_called_once_with(
+                "Some long text that needs summarization.",
+                max_length=50,
+                min_length=40,
+                do_sample=False,
+            )

@@ -1,13 +1,15 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 jobs:
-  ci:
+  release:
     runs-on: ubuntu-latest
 
     steps:
@@ -26,14 +28,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Lint with ruff
-        run: ruff check app/ tests/
-
-      - name: Check formatting with ruff
-        run: ruff format --check app/ tests/
-
-      - name: Run tests with coverage
-        run: pytest tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=80
+      - name: Run tests
+        run: pytest tests/ -v --cov=app --cov-fail-under=80
 
       - name: Build Docker image
-        run: docker build -t nlp-text-summarizer .
+        run: docker build -t nlp-text-summarizer:${{ github.ref_name }} .
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

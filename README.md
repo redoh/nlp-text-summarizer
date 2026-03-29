@@ -1,5 +1,7 @@
 # NLP Text Summarizer
 
+[![CI](https://github.com/redoh/nlp-text-summarizer/actions/workflows/ci.yml/badge.svg)](https://github.com/redoh/nlp-text-summarizer/actions/workflows/ci.yml)
+
 Automatic text summarization API supporting **extractive** and **abstractive** strategies. Built with FastAPI and HuggingFace Transformers.
 
 ## Features
