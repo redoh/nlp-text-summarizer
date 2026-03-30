@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nlp-text-summarizer
+  labels:
+    app: nlp-text-summarizer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nlp-text-summarizer
+  template:
+    metadata:
+      labels:
+        app: nlp-text-summarizer
+    spec:
+      containers:
+        - name: summarizer
+          image: nlp-text-summarizer:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SUMMARIZER_LOG_LEVEL
+              value: "INFO"
+            - name: SUMMARIZER_PRELOAD_ABSTRACTIVE
+              value: "true"
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 2
+          volumeMounts:
+            - name: model-cache
+              mountPath: /home/appuser/.cache
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: model-cache-pvc

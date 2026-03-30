@@ -1,5 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from app.exceptions import CircuitOpenError, ModelInferenceError, ModelLoadError
 from app.services.abstractive import AbstractiveSummarizer
 from app.services.extractive import ExtractiveSummarizer
 
@@ -121,21 +124,15 @@ class TestAbstractiveSummarizer:
         mock_pipe = MagicMock()
         mock_pipe.side_effect = RuntimeError("Model inference failed")
         with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
-            try:
+            with pytest.raises(ModelInferenceError, match="Model inference failed"):
                 self.summarizer.summarize("Some long text that needs summarization.")
-                assert False, "Should have raised RuntimeError"
-            except RuntimeError as e:
-                assert "Model inference failed" in str(e)
 
     def test_timeout_simulation(self):
         mock_pipe = MagicMock()
-        mock_pipe.side_effect = TimeoutError("Pipeline timed out")
+        mock_pipe.side_effect = RuntimeError("Pipeline timed out")
         with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
-            try:
+            with pytest.raises(ModelInferenceError, match="timed out"):
                 self.summarizer.summarize("Some long text that needs summarization.")
-                assert False, "Should have raised TimeoutError"
-            except TimeoutError as e:
-                assert "timed out" in str(e)
 
     def test_invalid_input_empty_string(self):
         mock_pipe = MagicMock()
@@ -155,3 +152,96 @@ class TestAbstractiveSummarizer:
                 min_length=40,
                 do_sample=False,
             )
+
+    def test_circuit_breaker_opens_after_failures(self):
+        mock_pipe = MagicMock()
+        mock_pipe.side_effect = RuntimeError("fail")
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            for _ in range(3):
+                with pytest.raises(ModelInferenceError):
+                    self.summarizer.summarize("Some long text that needs summarization.")
+            with pytest.raises(CircuitOpenError):
+                self.summarizer.summarize("Some long text that needs summarization.")
+
+    def test_model_load_error(self):
+        summarizer = AbstractiveSummarizer()
+        with patch.dict("sys.modules", {"transformers": None}):
+            with pytest.raises(ModelLoadError, match="Failed to import"):
+                summarizer._load_pipeline()
+
+    def test_unexpected_output_format(self):
+        mock_pipe = MagicMock()
+        mock_pipe.return_value = []
+        with patch.object(self.summarizer, "_load_pipeline", return_value=mock_pipe):
+            with pytest.raises(ModelInferenceError, match="Unexpected model output"):
+                self.summarizer.summarize("Some long text that needs summarization.")
+
+    def test_sanitize_removes_control_chars(self):
+        result = self.summarizer._sanitize("Hello\x00World\x01Test")
+        assert "\x00" not in result
+        assert "\x01" not in result
+        assert "HelloWorldTest" in result
+
+
+class TestExtractiveSanitization:
+    def test_sanitize_removes_control_chars(self):
+        summarizer = ExtractiveSummarizer()
+        result = summarizer._sanitize("Hello\x00World\x01Test")
+        assert "\x00" not in result
+        assert "\x01" not in result
+
+    def test_stop_words_is_frozenset(self):
+        assert isinstance(ExtractiveSummarizer.STOP_WORDS, frozenset)
+        assert "the" in ExtractiveSummarizer.STOP_WORDS
+
+    def test_text_with_urls(self):
+        summarizer = ExtractiveSummarizer()
+        text = (
+            "Visit https://example.com for more information about NLP. "
+            "The website contains detailed documentation about text processing. "
+            "Machine learning models are available for download from the site. "
+            "The documentation covers both extractive and abstractive methods."
+        )
+        result = summarizer.summarize(text, num_sentences=2)
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_text_with_special_characters(self):
+        summarizer = ExtractiveSummarizer()
+        text = (
+            "The cost was $500 for the service & it included 100% coverage. "
+            "Email support@example.com for more details about the pricing. "
+            "The discount of 20% applies to orders over $1,000 in value. "
+            "Terms and conditions apply to all purchases made online."
+        )
+        result = summarizer.summarize(text, num_sentences=2)
+        assert isinstance(result, str)
+
+
+class TestCircuitBreaker:
+    def test_initial_state_is_closed(self):
+        from app.services.circuit_breaker import CircuitBreaker
+
+        cb = CircuitBreaker()
+        assert cb.state == "closed"
+        assert cb.is_available is True
+
+    def test_opens_after_threshold(self):
+        from app.services.circuit_breaker import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=2)
+        cb.record_failure()
+        assert cb.state == "closed"
+        cb.record_failure()
+        assert cb.state == "open"
+        assert cb.is_available is False
+
+    def test_success_resets_failures(self):
+        from app.services.circuit_breaker import CircuitBreaker
+
+        cb = CircuitBreaker(failure_threshold=3)
+        cb.record_failure()
+        cb.record_failure()
+        cb.record_success()
+        assert cb.state == "closed"
+        assert cb.is_available is True

@@ -20,3 +20,15 @@ source = ["app"]
 
 [tool.coverage.report]
 fail_under = 80
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.backends"

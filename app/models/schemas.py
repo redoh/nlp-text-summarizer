@@ -39,3 +39,14 @@ class SummarizeResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str
+
+
+class BatchSummarizeRequest(BaseModel):
+    items: list[SummarizeRequest] = Field(
+        ..., min_length=1, max_length=10, description="List of texts to summarize (max 10)"
+    )
+
+
+class BatchSummarizeResponse(BaseModel):
+    results: list[SummarizeResponse]
+    total: int

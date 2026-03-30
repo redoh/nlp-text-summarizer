@@ -9,6 +9,7 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -31,6 +32,9 @@ jobs:
 
       - name: Check formatting with ruff
         run: ruff format --check app/ tests/
+
+      - name: Type check with mypy
+        run: mypy app/ --ignore-missing-imports
 
       - name: Run tests with coverage
         run: pytest tests/ -v --cov=app --cov-report=term-missing --cov-fail-under=80

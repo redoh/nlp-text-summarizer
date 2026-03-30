@@ -5,6 +5,8 @@ from collections import Counter
 from app.config import settings
 from app.services.base import BaseSummarizer
 
+_CONTROL_CHAR_PATTERN = re.compile(r"[^\x20-\x7E\s]")
+
 
 class ExtractiveSummarizer(BaseSummarizer):
     """Extractive summarizer using TF-IDF sentence scoring.
@@ -13,26 +15,8 @@ class ExtractiveSummarizer(BaseSummarizer):
     term frequency-inverse document frequency scores. No ML model required.
     """
 
-    def summarize(self, text: str, **kwargs) -> str:
-        num_sentences = kwargs.get("num_sentences") or settings.extractive_sentence_count
-        sentences = self._split_sentences(text)
-
-        if len(sentences) <= num_sentences:
-            return text.strip()
-
-        scores = self._score_sentences(sentences)
-        ranked = sorted(range(len(sentences)), key=lambda i: scores[i], reverse=True)
-        selected = sorted(ranked[:num_sentences])
-
-        return " ".join(sentences[i] for i in selected)
-
-    def _split_sentences(self, text: str) -> list[str]:
-        sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-        return [s.strip() for s in sentences if len(s.strip()) > 10]
-
-    def _tokenize(self, text: str) -> list[str]:
-        words = re.findall(r"\b[a-zA-Z]{2,}\b", text.lower())
-        stop_words = {
+    STOP_WORDS: frozenset[str] = frozenset(
+        {
             "the",
             "a",
             "an",
@@ -142,7 +126,37 @@ class ExtractiveSummarizer(BaseSummarizer):
             "who",
             "whom",
         }
-        return [w for w in words if w not in stop_words]
+    )
+
+    _SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+")
+    _WORD_PATTERN = re.compile(r"\b[a-zA-Z]{2,}\b")
+
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        """Filter control characters, keeping only printable + whitespace."""
+        return _CONTROL_CHAR_PATTERN.sub("", text)
+
+    def summarize(self, text: str, **kwargs) -> str:
+        text = self._sanitize(text)
+        num_sentences = kwargs.get("num_sentences") or settings.extractive_sentence_count
+        sentences = self._split_sentences(text)
+
+        if len(sentences) <= num_sentences:
+            return text.strip()
+
+        scores = self._score_sentences(sentences)
+        ranked = sorted(range(len(sentences)), key=lambda i: scores[i], reverse=True)
+        selected = sorted(ranked[:num_sentences])
+
+        return " ".join(sentences[i] for i in selected)
+
+    def _split_sentences(self, text: str) -> list[str]:
+        sentences = self._SENTENCE_PATTERN.split(text.strip())
+        return [s.strip() for s in sentences if len(s.strip()) > 10]
+
+    def _tokenize(self, text: str) -> list[str]:
+        words = self._WORD_PATTERN.findall(text.lower())
+        return [w for w in words if w not in self.STOP_WORDS]
 
     def _score_sentences(self, sentences: list[str]) -> list[float]:
         doc_tokens = [self._tokenize(s) for s in sentences]

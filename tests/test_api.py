@@ -106,3 +106,71 @@ async def test_summarize_text_too_long(client):
     )
     assert response.status_code == 400
     assert "exceeds maximum length" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_batch_summarize(client):
+    response = await client.post(
+        "/api/v1/summarize/batch",
+        json={
+            "items": [
+                {"text": SAMPLE_TEXT, "strategy": "extractive", "num_sentences": 2},
+                {"text": SAMPLE_TEXT, "strategy": "extractive", "num_sentences": 3},
+            ]
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert len(data["results"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_batch_summarize_empty(client):
+    response = await client.post("/api/v1/summarize/batch", json={"items": []})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cache_stats(client):
+    response = await client.get("/api/v1/cache/stats")
+    assert response.status_code == 200
+    data = response.json()
+    assert "hits" in data
+    assert "misses" in data
+    assert "size" in data
+
+
+@pytest.mark.asyncio
+async def test_request_id_header(client):
+    response = await client.get("/api/v1/health")
+    assert "X-Request-ID" in response.headers
+
+
+@pytest.mark.asyncio
+async def test_custom_request_id(client):
+    response = await client.get("/api/v1/health", headers={"X-Request-ID": "test-123"})
+    assert response.headers["X-Request-ID"] == "test-123"
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint(client):
+    response = await client.get("/metrics")
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_summarize_caching(client):
+    # First request
+    await client.post(
+        "/api/v1/summarize",
+        json={"text": SAMPLE_TEXT, "strategy": "extractive", "num_sentences": 2},
+    )
+    # Second identical request should hit cache
+    await client.post(
+        "/api/v1/summarize",
+        json={"text": SAMPLE_TEXT, "strategy": "extractive", "num_sentences": 2},
+    )
+    stats = await client.get("/api/v1/cache/stats")
+    data = stats.json()
+    assert data["hits"] >= 1
